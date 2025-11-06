@@ -2,8 +2,7 @@
 ## Cricket Or Nothing Game
 
 **Date:** November 5, 2025  
-**Migration Timeline:** 4-6 weeks  
-**Expected Cost Savings:** 20-60%
+**Migration Timeline:** 2-3 weeks
 
 ---
 
@@ -18,7 +17,6 @@
 | Firebase Storage | Amazon S3 | Lower cost, better performance |
 
 ### Key Benefits
-✅ **20-60% cost reduction** at scale  
 ✅ **No connection limits** (Firebase has 100 limit)  
 ✅ **Better performance** - sub-millisecond latency  
 ✅ **Enhanced security** - fine-grained access control  
@@ -52,49 +50,46 @@
 
 ---
 
-## ⏱️ 6-WEEK TIMELINE
+## ⏱️ 2-3 WEEK TIMELINE
 
-### Week 1: Infrastructure Setup
+### Week 1: Infrastructure & Authentication
+**Days 1-2: Infrastructure Setup**
 - Create AWS account and IAM roles
 - Set up Cognito User Pool + Identity Pool
 - Create DynamoDB tables
 - Configure social login providers
-
-**Deliverable:** AWS infrastructure ready
-
-### Week 2: Authentication Migration
 - Install AWS SDK in Unity
+
+**Days 3-5: Authentication Migration**
 - Implement Cognito authentication
-- Update all 5 login methods
+- Update all 5 login methods (Google, Facebook, Apple, WhatsApp, Guest)
 - Test authentication flows
 
-**Deliverable:** All logins working with AWS
+**Deliverable:** AWS infrastructure ready + All logins working
 
-### Week 3: Database Migration (Part 1)
+### Week 2: Database Migration
+**Days 1-3: Database Implementation**
 - Implement DynamoDB operations
-- Update user profile CRUD
-- Update coin management
-- Test database operations
-
-**Deliverable:** Core database features working
-
-### Week 4: Database Migration (Part 2)
-- Migrate existing Firebase data to DynamoDB
+- Update user profile CRUD operations
+- Update coin management system
 - Implement real-time session monitoring
+
+**Days 4-5: Data Migration & Testing**
+- Migrate existing Firebase data to DynamoDB
 - Enable dual-write (Firebase + DynamoDB)
+- Comprehensive testing
 - Validate data integrity
 
-**Deliverable:** Data migrated, systems running in parallel
+**Deliverable:** Database migrated and tested
 
-### Week 5: Testing & UAT
-- Comprehensive testing (auth, database, edge cases)
+### Week 3: Testing & Production Rollout
+**Days 1-2: Final Testing**
 - Load testing (100+ concurrent users)
-- Deploy to UAT environment
+- Edge case testing
 - Bug fixes
+- Deploy to UAT environment
 
-**Deliverable:** Stable UAT build
-
-### Week 6: Production Rollout
+**Days 3-5: Production Rollout**
 - Deploy to production
 - Gradual rollout: 10% → 50% → 100%
 - Monitor metrics and errors
@@ -132,67 +127,126 @@
 - S3: ~$12/month
 - **Total: ~$20-50/month**
 
-### 💵 Savings: 40-60% cheaper + unlimited scalability!
+### 💵 Unlimited scalability with pay-per-use pricing
 
 ---
 
-## 🔧 KEY TECHNICAL CHANGES
+## 🔧 CODE CHANGES REQUIRED
 
-### 1. Authentication Code Example
+### File Changes Summary
 
-**BEFORE (Firebase):**
+#### 1. `FirebaseManager.cs` → `AWSManager.cs`
+**Change:** Replace Firebase initialization with AWS SDK setup
 ```csharp
-FirebaseAuth.DefaultInstance.SignInAnonymouslyAsync()
-FirebaseUser user = task.Result.User;
-string userId = user.UserId;
+// REMOVE: FirebaseApp.CheckAndFixDependenciesAsync()
+// ADD: AmazonDynamoDBClient, CognitoAWSCredentials initialization
 ```
 
-**AFTER (AWS Cognito):**
+#### 2. `AuthManager.cs`
+**Change:** Replace Firebase RTDB operations with DynamoDB
 ```csharp
+// REMOVE: dbRef.Child("users").Child(userId).GetValueAsync()
+// ADD: dynamoClient.GetItemAsync(request)
+// REMOVE: dbRef.SetRawJsonValueAsync(json)
+// ADD: dynamoClient.PutItemAsync(putRequest)
+```
+
+#### 3. `GoogleLogin.cs`, `FaceBookManager.cs`, `AppleLogin.cs`
+**Change:** Replace Firebase Auth with Cognito identity providers
+```csharp
+// REMOVE: FirebaseAuth.SignInWithCredentialAsync(credential)
+// ADD: CognitoAWSCredentials.AddLogin("provider", token)
+```
+
+#### 4. `WhatsAppLogin.cs`
+**Change:** Replace Firebase Phone Auth with Cognito SMS
+```csharp
+// REMOVE: FirebaseAuth.PhoneAuthProvider.VerifyPhoneNumber()
+// ADD: Cognito SignUpRequest + ConfirmSignUpRequest
+```
+
+#### 5. `GuestLoginManager.cs`
+**Change:** Replace anonymous auth with Cognito unauthenticated
+```csharp
+// REMOVE: FirebaseAuth.SignInAnonymouslyAsync()
+// ADD: CognitoAWSCredentials.GetIdentityIdAsync() (unauthenticated)
+```
+
+#### 6. `EditProfileManager.cs`
+**Change:** Replace Firebase RTDB with DynamoDB operations
+```csharp
+// REMOVE: dbRef.Child("users").GetValueAsync()
+// ADD: dynamoClient.GetItemAsync() / PutItemAsync()
+// REMOVE: dbRef.Query for team name check
+// ADD: dynamoClient.QueryAsync() with GSI
+```
+
+#### 7. `CoinManager.cs`
+**Change:** Replace Firebase transactions with DynamoDB atomic updates
+```csharp
+// REMOVE: dbRef.RunTransaction()
+// ADD: dynamoClient.UpdateItemAsync() with UpdateExpression
+// REMOVE: dbRef.Child("coinHistory").Push()
+// ADD: Generate transactionId manually (timestamp#guid)
+```
+
+### Before/After Examples
+
+**Authentication (Guest Login):**
+```csharp
+// BEFORE: Firebase
+FirebaseAuth.DefaultInstance.SignInAnonymouslyAsync()
+    .ContinueWith(task => {
+        string userId = task.Result.User.UserId;
+    });
+
+// AFTER: AWS Cognito
 var credentials = new CognitoAWSCredentials(identityPoolId, RegionEndpoint.USEast1);
 string userId = await credentials.GetIdentityIdAsync();
 ```
 
-### 2. Database Code Example
-
-**BEFORE (Firebase RTDB):**
+**Database Read (User Profile):**
 ```csharp
+// BEFORE: Firebase RTDB
 dbRef.Child("users").Child(userId).GetValueAsync()
-dbRef.Child("users").Child(userId).SetRawJsonValueAsync(json)
-```
+    .ContinueWith(task => {
+        var userData = JsonUtility.FromJson<UserProfile>(task.Result.GetRawJsonValue());
+    });
 
-**AFTER (AWS DynamoDB):**
-```csharp
-// Read
-var request = new GetItemRequest { 
-    TableName = "CricketGame_Users", 
-    Key = new Dictionary<string, AttributeValue> { 
-        {"userId", new AttributeValue {S = userId}} 
-    } 
+// AFTER: AWS DynamoDB
+var request = new GetItemRequest {
+    TableName = "CricketGame_Users",
+    Key = new Dictionary<string, AttributeValue> {
+        {"userId", new AttributeValue {S = userId}}
+    }
 };
 var response = await dynamoClient.GetItemAsync(request);
-
-// Write
-var putRequest = new PutItemRequest { 
-    TableName = "CricketGame_Users", 
-    Item = userAttributes 
-};
-await dynamoClient.PutItemAsync(putRequest);
+var userData = MapToUserProfile(response.Item);
 ```
 
-### 3. Coin Transactions
-
-**BEFORE (Firebase RunTransaction):**
+**Database Write (Save User):**
 ```csharp
+// BEFORE: Firebase RTDB
+string json = JsonUtility.ToJson(userData);
+dbRef.Child("users").Child(userId).SetRawJsonValueAsync(json);
+
+// AFTER: AWS DynamoDB
+var request = new PutItemRequest {
+    TableName = "CricketGame_Users",
+    Item = ConvertToDynamoDBItem(userData)
+};
+await dynamoClient.PutItemAsync(request);
+```
+
+**Atomic Coin Update:**
+```csharp
+// BEFORE: Firebase Transaction
 dbRef.Child("coins").RunTransaction(mutableData => {
-    int coins = (int)mutableData.Value;
-    mutableData.Value = coins + amount;
+    mutableData.Value = (int)mutableData.Value + amount;
     return TransactionResult.Success(mutableData);
 });
-```
 
-**AFTER (DynamoDB Atomic Update):**
-```csharp
+// AFTER: DynamoDB Atomic Update
 var request = new UpdateItemRequest {
     TableName = "CricketGame_Users",
     Key = new Dictionary<string, AttributeValue> {
@@ -204,6 +258,17 @@ var request = new UpdateItemRequest {
     }
 };
 await dynamoClient.UpdateItemAsync(request);
+```
+
+**Real-time Listener (Session Token):**
+```csharp
+// BEFORE: Firebase ValueChanged
+userRef.ValueChanged += HandleSessionChanged;
+
+// AFTER: AWS AppSync Subscription (or polling)
+await appSyncClient.Subscribe<User>(subscriptionQuery, (data) => {
+    HandleSessionChanged(data.sessionToken);
+});
 ```
 
 ---
@@ -263,7 +328,7 @@ await dynamoClient.UpdateItemAsync(request);
 - ✓ All 5 authentication methods working
 - ✓ Zero data loss (100% data integrity)
 - ✓ <2% increase in errors during transition
-- ✓ Cost reduction visible within 1 month
+- ✓ Migration completed on schedule
 - ✓ No negative player feedback
 - ✓ Performance equal or better than Firebase
 
@@ -298,7 +363,7 @@ await dynamoClient.UpdateItemAsync(request);
 - **QA Engineer (0.5 FTE):** Testing
 - **DevOps (0.5 FTE):** Monitoring, CI/CD
 
-**Total Effort:** ~3-4 person-months
+**Total Effort:** ~2-3 weeks (2 developers)
 
 ### Skills Needed
 - AWS services (Cognito, DynamoDB, S3)
@@ -319,7 +384,7 @@ await dynamoClient.UpdateItemAsync(request);
 ### Cost
 - **50k free MAU** with Cognito
 - **Pay-per-request:** Only charged for actual usage
-- **No idle costs:** Unlike Firebase always-on pricing
+- **Flexible pricing:** Scales with usage
 
 ### Scalability
 - **Auto-scaling:** Handles millions of users
@@ -342,23 +407,17 @@ await dynamoClient.UpdateItemAsync(request);
 ## 📊 MIGRATION PHASES SUMMARY
 
 ```
-Phase 1: Infrastructure (Week 1)
-└─ Create AWS resources, configure services
+Week 1: Infrastructure & Authentication
+├─ Days 1-2: AWS infrastructure setup
+└─ Days 3-5: Migrate all 5 login methods
 
-Phase 2: Authentication (Week 2)
-└─ Migrate all 5 login methods to Cognito
+Week 2: Database Migration
+├─ Days 1-3: Implement DynamoDB operations
+└─ Days 4-5: Data migration & testing
 
-Phase 3: Database Part 1 (Week 3)
-└─ Implement DynamoDB operations
-
-Phase 4: Database Part 2 + Data Migration (Week 4)
-└─ Migrate existing data, enable dual-write
-
-Phase 5: Testing (Week 5)
-└─ Comprehensive testing, UAT deployment
-
-Phase 6: Production Rollout (Week 6)
-└─ Gradual rollout, monitor, complete migration
+Week 3: Testing & Production
+├─ Days 1-2: Final testing & UAT
+└─ Days 3-5: Production rollout (10% → 50% → 100%)
 ```
 
 ---
@@ -368,18 +427,13 @@ Phase 6: Production Rollout (Week 6)
 ### Month 1 (Post-Migration)
 - ✅ All users on AWS
 - ✅ Firebase completely disabled
-- ✅ 20-40% cost reduction visible
 - ✅ Performance metrics equal or better
-
-### Month 3
-- ✅ 40-60% cost savings realized
-- ✅ Scalability improvements proven
 - ✅ Team comfortable with AWS
 
-### Month 6
+### Month 3
+- ✅ Scalability improvements proven
 - ✅ New AWS-exclusive features deployed
 - ✅ Advanced analytics implemented
-- ✅ ROI positive from cost savings
 
 ---
 
@@ -408,12 +462,12 @@ Phase 6: Production Rollout (Week 6)
 ## ✨ CONCLUSION
 
 **This migration will:**
-- Save 20-60% on infrastructure costs
 - Remove scalability limitations
 - Improve performance and security
 - Future-proof the game for growth
+- Enable advanced AWS features
 
-**Timeline:** 4-6 weeks  
+**Timeline:** 2-3 weeks  
 **Budget:** $500-1000 AWS costs + developer time  
 **Risk:** Medium (with proper testing and gradual rollout)  
 **Recommendation:** ✅ **PROCEED with migration**
