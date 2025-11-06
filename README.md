@@ -43,55 +43,6 @@
 
 ---
 
-## 2-3 WEEK TIMELINE
-
-### Week 1: Infrastructure & Authentication
-**Days 1-2: Infrastructure Setup**
-- Create AWS account and IAM roles
-- Set up Cognito User Pool + Identity Pool
-- Create DynamoDB tables
-- Configure social login providers
-- Install AWS SDK in Unity
-
-**Days 3-5: Authentication Migration**
-- Implement Cognito authentication
-- Update all 5 login methods (Google, Facebook, Apple, WhatsApp, Guest)
-- Test authentication flows
-
-**Deliverable:** AWS infrastructure ready + All logins working
-
-### Week 2: Database Migration
-**Days 1-3: Database Implementation**
-- Implement DynamoDB operations
-- Update user profile CRUD operations
-- Update coin management system
-- Replace real-time listeners (polling or AppSync)
-
-**Days 4-5: Data Migration & Testing**
-- Migrate existing Firebase data to DynamoDB
-- Enable dual-write (Firebase + DynamoDB)
-- Comprehensive testing
-- Validate data integrity
-
-**Deliverable:** Database migrated and tested
-
-### Week 3: Testing & Production Rollout
-**Days 1-2: Final Testing**
-- Load testing (100+ concurrent users)
-- Edge case testing
-- Bug fixes
-- Deploy to UAT environment
-
-**Days 3-5: Production Rollout**
-- Deploy to production
-- Gradual rollout: 10% → 50% → 100%
-- Monitor metrics and errors
-- Disable Firebase completely
-
-**Deliverable:** Migration complete ✅
-
----
-
 ## CODE CHANGES REQUIRED
 
 ### File Changes Summary
