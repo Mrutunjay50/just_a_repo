@@ -240,7 +240,7 @@ await appSyncClient.Subscribe<User>(subscriptionQuery, (data) => {
 
 Firebase RTDB's real-time listeners (`ValueChanged`, `ChildAdded`, etc.) need to be replaced. You have 3 options:
 
-### Option 1: AWS AppSync (GraphQL Subscriptions) - RECOMMENDED
+### Option 1: AWS AppSync (GraphQL Subscriptions)
 Best for real-time requirements similar to Firebase.
 
 **Setup:**
@@ -425,19 +425,6 @@ public class PollingMonitor : MonoBehaviour
 - Battery drain on mobile
 
 ---
-
-### Recommended Approach
-
-**For your Cricket game:**
-
-1. **Session Token Monitoring** → Use **Polling** (30-60 second interval)
-   - Not critical to be instant
-   - Simple implementation
-   - Easy to test during migration
-
-2. **Future Real-time Features** (leaderboards, live scores) → Use **AppSync**
-   - Better user experience
-   - Scalable for growth
 
 ### Real-time Features in Your Code
 
