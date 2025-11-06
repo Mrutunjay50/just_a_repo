@@ -65,7 +65,7 @@
 - Implement DynamoDB operations
 - Update user profile CRUD operations
 - Update coin management system
-- Implement real-time session monitoring
+- Replace real-time listeners (polling or AppSync)
 
 **Days 4-5: Data Migration & Testing**
 - Migrate existing Firebase data to DynamoDB
@@ -104,12 +104,14 @@
 ```
 
 #### 2. `AuthManager.cs`
-**Change:** Replace Firebase RTDB operations with DynamoDB
+**Change:** Replace Firebase RTDB operations with DynamoDB + Real-time listener
 ```csharp
 // REMOVE: dbRef.Child("users").Child(userId).GetValueAsync()
 // ADD: dynamoClient.GetItemAsync(request)
 // REMOVE: dbRef.SetRawJsonValueAsync(json)
 // ADD: dynamoClient.PutItemAsync(putRequest)
+// REMOVE: userRef.ValueChanged += HandleSessionChanged
+// ADD: StartCoroutine(PollSessionToken(userId)) // or AppSync subscription
 ```
 
 #### 3. `GoogleLogin.cs`, `FaceBookManager.cs`, `AppleLogin.cs`
@@ -234,6 +236,228 @@ await appSyncClient.Subscribe<User>(subscriptionQuery, (data) => {
 
 ---
 
+## HANDLING REAL-TIME FEATURES
+
+Firebase RTDB's real-time listeners (`ValueChanged`, `ChildAdded`, etc.) need to be replaced. You have 3 options:
+
+### Option 1: AWS AppSync (GraphQL Subscriptions) - RECOMMENDED
+Best for real-time requirements similar to Firebase.
+
+**Setup:**
+1. Create AppSync API with GraphQL schema
+2. Connect to DynamoDB as data source
+3. Use subscriptions for real-time updates
+
+**Example - Session Token Monitoring:**
+```graphql
+# GraphQL Schema
+type User {
+  userId: ID!
+  sessionToken: String!
+}
+
+type Mutation {
+  updateSessionToken(userId: ID!, token: String!): User
+}
+
+type Subscription {
+  onSessionTokenChanged(userId: ID!): User
+    @aws_subscribe(mutations: ["updateSessionToken"])
+}
+```
+
+**Unity Client:**
+```csharp
+using AWS.AppSync;
+
+public class SessionMonitor : MonoBehaviour
+{
+    private AppSyncClient appSyncClient;
+    
+    public async void StartMonitoring(string userId)
+    {
+        string subscriptionQuery = $@"
+            subscription {{
+                onSessionTokenChanged(userId: ""{userId}"") {{
+                    sessionToken
+                }}
+            }}
+        ";
+        
+        await appSyncClient.Subscribe<SessionData>(subscriptionQuery, (data) => {
+            string serverToken = data.sessionToken;
+            string localToken = PlayerPrefs.GetString("sessionToken", "");
+            
+            if (serverToken != localToken && !string.IsNullOrEmpty(serverToken))
+            {
+                Debug.LogWarning("Session changed on another device!");
+                ForceLogout();
+            }
+        });
+    }
+}
+```
+
+**Pros:**
+- True real-time updates (similar to Firebase)
+- Automatic reconnection handling
+- Scales automatically
+
+**Cons:**
+- Additional service to configure
+- Learning curve for GraphQL
+
+---
+
+### Option 2: DynamoDB Streams + Lambda + WebSocket API
+For custom real-time requirements.
+
+**Setup:**
+1. Enable DynamoDB Streams on tables
+2. Create Lambda function to process stream events
+3. Use API Gateway WebSocket to push updates to clients
+
+**Flow:**
+```
+DynamoDB Update → Stream Event → Lambda → WebSocket → Unity Client
+```
+
+**Unity Client:**
+```csharp
+using WebSocketSharp;
+
+public class RealtimeManager : MonoBehaviour
+{
+    private WebSocket ws;
+    
+    public void ConnectWebSocket(string userId)
+    {
+        ws = new WebSocket("wss://your-api-id.execute-api.us-east-1.amazonaws.com/production");
+        
+        ws.OnMessage += (sender, e) => {
+            var update = JsonUtility.FromJson<SessionUpdate>(e.Data);
+            HandleSessionUpdate(update);
+        };
+        
+        ws.Connect();
+        
+        // Subscribe to user-specific updates
+        ws.Send(JsonUtility.ToJson(new { 
+            action = "subscribe", 
+            userId = userId 
+        }));
+    }
+}
+```
+
+**Pros:**
+- Full control over real-time logic
+- Can filter events server-side
+- Cost-effective for high volume
+
+**Cons:**
+- More complex setup
+- Requires WebSocket management
+
+---
+
+### Option 3: Polling (Simple Alternative)
+For less critical real-time features or during initial migration.
+
+**Implementation:**
+```csharp
+public class PollingMonitor : MonoBehaviour
+{
+    private string userId;
+    private bool isPolling = false;
+    
+    public void StartPolling(string uid)
+    {
+        userId = uid;
+        isPolling = true;
+        StartCoroutine(PollSessionToken());
+    }
+    
+    IEnumerator PollSessionToken()
+    {
+        while (isPolling)
+        {
+            // Wait 30 seconds between checks
+            yield return new WaitForSeconds(30f);
+            
+            try
+            {
+                // Check session token
+                var user = await awsDbManager.GetUser(userId);
+                string serverToken = user.sessionToken;
+                string localToken = PlayerPrefs.GetString("sessionToken", "");
+                
+                if (serverToken != localToken && !string.IsNullOrEmpty(serverToken))
+                {
+                    Debug.LogWarning("Session changed - logging out!");
+                    ForceLogout();
+                    isPolling = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Polling error: {ex.Message}");
+            }
+        }
+    }
+    
+    public void StopPolling()
+    {
+        isPolling = false;
+        StopAllCoroutines();
+    }
+}
+```
+
+**Pros:**
+- Simplest to implement
+- No additional services needed
+- Good for migration testing
+
+**Cons:**
+- Not truly real-time (delay up to polling interval)
+- More DynamoDB read requests
+- Battery drain on mobile
+
+---
+
+### Recommended Approach
+
+**For your Cricket game:**
+
+1. **Session Token Monitoring** → Use **Polling** (30-60 second interval)
+   - Not critical to be instant
+   - Simple implementation
+   - Easy to test during migration
+
+2. **Future Real-time Features** (leaderboards, live scores) → Use **AppSync**
+   - Better user experience
+   - Scalable for growth
+
+### Real-time Features in Your Code
+
+**Current Firebase Listeners:**
+```csharp
+// AuthManager.cs - Line 381
+userRef.ValueChanged += HandleSessionChanged;
+```
+
+**Migration:**
+```csharp
+// Replace with polling initially
+StartCoroutine(PollSessionToken(userId));
+
+// Later upgrade to AppSync if needed
+// await SubscribeToSessionChanges(userId);
+```
+
+---
+
 ## AWS SERVICES REQUIRED
 
 ### 1. Amazon Cognito
@@ -258,6 +482,18 @@ await appSyncClient.Subscribe<User>(subscriptionQuery, (data) => {
 - Bucket: cricket-game-assets
 - CloudFront: CDN for faster delivery
 
+### 4. AWS AppSync (Optional - for Real-time)
+**Purpose:** Real-time data synchronization (alternative to polling)  
+**Setup:**
+- Create GraphQL API
+- Connect to DynamoDB
+- Define subscriptions for real-time updates
+
+**When to use:**
+- If you need instant real-time updates
+- For features like live leaderboards, chat, notifications
+- Can be added later if polling is sufficient initially
+
 ---
 
 ## MIGRATION PHASES SUMMARY
@@ -271,7 +507,10 @@ Week 2: Database Migration
 ├─ Days 1-3: Implement DynamoDB operations
 └─ Days 4-5: Data implementation & testing
 
-Week 3: Testing
-├─ Days 1-2: Final testing
+Week 3: Real-time Logic & Testing
+├─ Days 1-2: Implement/refine real-time solution (polling or AppSync)
+│  └─ Replace Firebase listeners, test real-time features
+└─ Days 3-5: Final testing
+   └─ Edge case testing & bug fixes
 ```
 ---
